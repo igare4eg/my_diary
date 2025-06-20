@@ -1,7 +1,7 @@
 from PyQt5.QtWidgets import QApplication, QInputDialog, QMessageBox
 import sys
 from ui import DiaryApp
-from db import init_db
+from db import initialize_database
 
 
 def check_password():
@@ -13,7 +13,7 @@ def check_password():
 
 
 if __name__ == "__main__":
-    init_db()
+    initialize_database()
     app = QApplication(sys.argv)
     check_password()
     window = DiaryApp()

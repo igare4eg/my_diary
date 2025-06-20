@@ -1,9 +1,14 @@
+import os
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from models import Base
 
-engine = create_engine("sqlite:///diary.db", echo=False)
+DB_PATH = "diary.db"
+engine = create_engine(f"sqlite:///{DB_PATH}", echo=False)
 Session = sessionmaker(bind=engine)
 
-def init_db():
-    Base.metadata.create_all(engine)
+
+def initialize_database():
+    if not os.path.exists(DB_PATH):
+        print("Создаю базу данных...")
+        Base.metadata.create_all(engine)
