@@ -1,8 +1,12 @@
-from PyQt5.QtWidgets import (QMainWindow, QApplication, QWidget,
-                             QVBoxLayout, QTextEdit, QPushButton, QDateEdit,
-                             QHBoxLayout, QLabel, QMessageBox)
-from PyQt5.QtCore import QDate
 from datetime import date
+
+from PyQt5.QtCore import QDate
+from PyQt5.QtGui import QFont, QTextCharFormat
+from PyQt5.QtWidgets import (QMainWindow, QWidget, QLineEdit, QListWidget,
+                             QVBoxLayout, QTextEdit, QPushButton, QDateEdit,
+                             QHBoxLayout, QMessageBox,
+                             QFontComboBox, QSpinBox)
+
 from db import Session
 from models import DiaryEntry
 
@@ -22,6 +26,8 @@ class DiaryApp(QMainWindow):
         self.date_edit.setDate(QDate.currentDate())
 
         self.text_edit = QTextEdit()
+        default_font = QFont("Bookman Old Style", 11)
+        self.text_edit.setFont(default_font)
 
         self.save_button = QPushButton("Сохранить")
         self.load_button = QPushButton("Загрузить")
@@ -45,6 +51,51 @@ class DiaryApp(QMainWindow):
         self.toggle_theme()
         self.theme_button.clicked.connect(self.toggle_theme)
 
+        self.search_input = QLineEdit()
+        self.search_input.setPlaceholderText("Введите текст для поиска...")
+        self.search_button = QPushButton("Искать")
+        self.search_results = QListWidget()
+        self.search_results.hide()  # Скрываем список пока нет результатов
+
+        self.search_button.clicked.connect(self.search_entries)
+        self.search_results.itemClicked.connect(self.load_from_search)
+
+        # Выбор шрифта
+        self.font_combo = QFontComboBox()
+        self.font_combo.setFixedHeight(24)
+        self.font_combo.setFontFilters(QFontComboBox.ScalableFonts)
+        self.font_combo.setCurrentFont(QFont("Bookman Old Style"))
+
+        # Размер
+        self.font_size_spin = QSpinBox()
+        self.font_size_spin.setRange(6, 48)
+        self.font_size_spin.setValue(11)
+        self.font_size_spin.setFixedHeight(24)
+
+        # Кнопки форматирования
+        self.bold_button = QPushButton("B")
+        self.bold_button.setCheckable(True)
+        self.bold_button.setFixedSize(24, 24)
+        self.bold_button.setStyleSheet("font-weight: bold")
+
+        self.italic_button = QPushButton("I")
+        self.italic_button.setCheckable(True)
+        self.italic_button.setFixedSize(24, 24)
+        self.italic_button.setStyleSheet("font-style: italic")
+
+        self.underline_button = QPushButton("U")
+        self.underline_button.setCheckable(True)
+        self.underline_button.setFixedSize(24, 24)
+        self.underline_button.setStyleSheet("text-decoration: underline")
+
+        # Сигналы
+        self.font_combo.currentFontChanged.connect(self.change_font)
+        self.font_size_spin.valueChanged.connect(self.change_font)
+        self.bold_button.clicked.connect(self.toggle_bold)
+        self.italic_button.clicked.connect(self.toggle_italic)
+        self.underline_button.clicked.connect(self.toggle_underline)
+        self.text_edit.cursorPositionChanged.connect(self.update_format_buttons)
+
         # Layout
         central_widget = QWidget()
         layout = QVBoxLayout()
@@ -65,6 +116,18 @@ class DiaryApp(QMainWindow):
         layout.addWidget(self.load_button)
         layout.addWidget(self.delete_button)
         layout.addWidget(self.theme_button)
+
+        format_layout = QHBoxLayout()
+        format_layout.addWidget(self.font_combo)
+        format_layout.addWidget(self.font_size_spin)
+        format_layout.addWidget(self.bold_button)
+        format_layout.addWidget(self.italic_button)
+        format_layout.addWidget(self.underline_button)
+
+        layout.insertWidget(0, self.search_input)
+        layout.insertWidget(1, self.search_button)
+        layout.insertWidget(2, self.search_results)
+        layout.insertLayout(0, format_layout)
 
         central_widget.setLayout(layout)
         self.setCentralWidget(central_widget)
@@ -114,10 +177,14 @@ class DiaryApp(QMainWindow):
         selected_date = self.get_selected_date()
         entry = self.session.get(DiaryEntry, selected_date)
         if entry:
-            self.session.delete(entry)
-            self.session.commit()
-            self.text_edit.clear()
-            QMessageBox.information(self, "Удалено", "Запись удалена.")
+            reply = QMessageBox.question(self, 'Подтверждение удаления',
+                                         f"Удалить запись за {selected_date}?",
+                                         QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+            if reply == QMessageBox.Yes:
+                self.session.delete(entry)
+                self.session.commit()
+                self.text_edit.clear()
+                QMessageBox.information(self, "Удалено", "Запись удалена.")
         else:
             QMessageBox.information(self, "Нет записи", "На выбранную дату ничего нет.")
 
@@ -149,3 +216,85 @@ class DiaryApp(QMainWindow):
         else:
             self.setStyleSheet("")
             self.theme = "light"
+
+    def closeEvent(self, event):
+        self.auto_save_current()
+        event.accept()
+
+    def search_entries(self):
+        query = self.search_input.text().strip()
+        self.search_results.clear()
+
+        if not query:
+            self.search_results.hide()
+            return
+
+        # Поиск по содержимому
+        results = self.session.query(DiaryEntry).filter(DiaryEntry.content.like(f"%{query}%")).all()
+
+        if not results:
+            self.search_results.addItem("Ничего не найдено")
+        else:
+            for entry in results:
+                # Добавляем дату в формате YYYY-MM-DD для выбора
+                self.search_results.addItem(entry.date.strftime("%Y-%m-%d"))
+
+        self.search_results.show()
+
+    def load_from_search(self, item):
+        date_str = item.text()
+        try:
+            y, m, d = map(int, date_str.split("-"))
+            qdate = QDate(y, m, d)
+            self.date_edit.setDate(qdate)
+            self.search_results.hide()
+            self.search_input.clear()
+        except Exception as e:
+            print("Ошибка при выборе даты из поиска:", e)
+
+    def change_font(self):
+        font = self.font_combo.currentFont()
+        font.setPointSize(self.font_size_spin.value())
+        self.text_edit.setFont(font)
+
+    def toggle_bold(self):
+        cursor = self.text_edit.textCursor()
+        if not cursor.hasSelection():
+            fmt = self.text_edit.currentCharFormat()
+            fmt.setFontWeight(QFont.Bold if self.bold_button.isChecked() else QFont.Normal)
+            self.text_edit.setCurrentCharFormat(fmt)
+        else:
+            fmt = QTextCharFormat()
+            fmt.setFontWeight(QFont.Bold if self.bold_button.isChecked() else QFont.Normal)
+            cursor.mergeCharFormat(fmt)
+
+    def toggle_italic(self):
+        cursor = self.text_edit.textCursor()
+        if not cursor.hasSelection():
+            fmt = self.text_edit.currentCharFormat()
+            fmt.setFontItalic(self.italic_button.isChecked())
+            self.text_edit.setCurrentCharFormat(fmt)
+        else:
+            fmt = QTextCharFormat()
+            fmt.setFontItalic(self.italic_button.isChecked())
+            cursor.mergeCharFormat(fmt)
+
+    def toggle_underline(self):
+        cursor = self.text_edit.textCursor()
+        if not cursor.hasSelection():
+            fmt = self.text_edit.currentCharFormat()
+            fmt.setFontUnderline(self.underline_button.isChecked())
+            self.text_edit.setCurrentCharFormat(fmt)
+        else:
+            fmt = QTextCharFormat()
+            fmt.setFontUnderline(self.underline_button.isChecked())
+            cursor.mergeCharFormat(fmt)
+
+    def update_format_buttons(self):
+        fmt = self.text_edit.currentCharFormat()
+
+        self.bold_button.setChecked(fmt.fontWeight() == QFont.Bold)
+        self.italic_button.setChecked(fmt.fontItalic())
+        self.underline_button.setChecked(fmt.fontUnderline())
+
+
