@@ -10,6 +10,7 @@ class DiaryApp(QMainWindow):
         super().__init__()
 
         self.setWindowTitle("Мой дневник")
+        self.resize(800, 600)
 
         self.session = Session()
 
